@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 #Initial constants 
 g0=9.81 #Earth's Gravity
 gm=1.62 #Moon's Gravity
+Isp=243 #Isp of the engine 
+
 
 deg2rad=np.pi/180
 def Initial_guess_Hop(x_final,twr):
@@ -64,9 +66,18 @@ def Initial_guess_Hop(x_final,twr):
     x_coord=x_coord_1+x_coord_2
     y_coord=y_coord_1+y_coord_2
     # print(len(x_coord))
-    return v_ballistic,y_ballistic,t_final,t_ballistic,gamma_ballistic/deg2rad,x_coord,y_coord
+    m_prop_m_total= twr*gm*t_ballistic/(Isp*g0) #Percentage of proppelant used per hop
+    
+    return v_ballistic,y_ballistic,t_final,t_ballistic,gamma_ballistic/deg2rad,x_coord,y_coord,m_prop_m_total
+
+
+#%%
 
 def main():
     twr=1.3
     x_final=3.2
     Initial_guess_Hop(x_final,twr)	
+    
+    
+
+

@@ -1,13 +1,20 @@
 import numpy as np
 import matplotlib.pyplot as plt  
-
+import os
+import pandas as pd
 
 #Initial constants 
 g0=9.81 #Earth's Gravity
 gm=1.62 #Moon's Gravity
 
+path=os.getcwd()+"\\Plots\\"+"Data for Range of 3.2.csv"
+name="df32"
+command=pd.read_csv("{}".format(path))
+exec(name+"="+"command")   #read the csv file (put 'r' before the path string to address any special characters in the path, such as '\'). Don't forget to put the file name at the end of the path + ".csv"
+
+
 #Parameters to be changed
-m_prop_m_total=0.0022 #Percentage of the mass needed for each hop (0.0022 for normal method, 0.0033 for alternative)
+m_prop_m_total=(100-df32.iloc[-1,4])/100 #Percentage of the mass needed for each hop (0.0022 for normal method, 0.0033 for alternative)
 D_covered=200
 R_hop=3.2
 
@@ -28,6 +35,7 @@ def subsystem_size(pl_percentage):
     m_total_1=m_pl/pl_percentage #The pl_percentage change from 8% to 12%
     
     m_propellant=m_total_1-m_total_1*((1-m_prop_m_total)**(np.ceil(D_covered/R_hop))) #Each hop uses 0.3% in the worst case, the descent into the pit uses 1.33% of the total mass
+    print(m_propellant)
     m_dry=m_total_1-m_propellant-m_pl
     m_inert= m_dry+m_pl
 
@@ -70,6 +78,7 @@ plt.title("Convergence of system subsizing")
 plt.grid(True)
 plt.xlabel('Payload percentage (%)',fontsize=15)
 plt.ylabel(r'Mass Difference',fontsize=15)    
+plt.savefig(os.getcwd()+"\\plots\\" + "system_subsizing_convergence.png")
 
 
 # plt.plot([x for x in np.arange(0.08,0.13,0.001)],[abs(subsystem_size(x)[0]) for x in np.arange(0.08,0.13,0.001)],color="brown")

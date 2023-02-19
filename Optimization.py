@@ -8,28 +8,35 @@ Created on Fri May  6 01:58:36 2022
 from gekko import GEKKO
 import numpy as np
 import matplotlib.pyplot as plt
+plt.rcParams.update({'figure.max_open_warning': 0})
 import Initial_Guess
-
+import pandas as pd
+import os
+import scipy.io as sio
 
 twr=1.3 #Thrust-to-Weight ratio
 Isp=243 #Isp of the engine 
 
-##Nt_values for different ranges, for a max final horizontal speed of 1 m/s
-#3.2 -> 59
-#2.501 -> 33,49
-#2 -> 32
-#1.499 -> 28
-#1 -> 61
-x_final=3.2 #Change here the values of the range of the hopper
+##Nt_values for range of 3.2m, for a max final horizontal speed of 0 m/s
+#3.2 -> 62, 50
 
+##Nt_values for different ranges, for a max final horizontal speed of 1 m/s
+#3.2 -> 52
+#2.5 -> 52,46
+#2 -> 48,46,52,51
+#1.5-> 48,47
+#1 -> 49,48,46
+x_final=3.2 #Change here the values of the range of the hopper
+nt_values=[52] #If this array is empty, the program will look for solutions
 m_total=100 #This value is kept as 100, in order to have the final mass in percentage, the algorithm does not depend on the initial mass of the hopper
+save_results=1 # If 1-> Save plots as png and results as csv in folder "Plots"
+alternative_traj=0 # If 1-> Alternative trajectory where final horizontal velocity is 0
 
 #Initial constants 
 g0=9.81 #Earth's Gravity
 gm=1.62 #Moon's Gravity
-
 deg2rad=np.pi/180
-gamma0=(89)*deg2rad
+gamma0=(90)*deg2rad
 
 n=0
 def optimize_trajectory(nt,t_final,x_final):
@@ -81,7 +88,7 @@ def optimize_trajectory(nt,t_final,x_final):
     m.Equation(mass*v.dt()==(Isp*m_dot*g0)*m.cos(alpha)-mass*gm*m.sin(gamma))
     m.Equation(mass*v*gamma.dt()==(Isp*m_dot*g0)*m.sin(alpha)-mass*gm*m.cos(gamma))    
     m.Equation(alpha+gamma==theta)
-    m.Equation(theta.dt()==theta_dot.dt())
+    m.Equation(theta.dt()==theta_dot)
     m.Equation(theta_dot.dt()==M_rw_J)
     m.Equation(mass.dt()==-m_dot)
     
@@ -90,7 +97,8 @@ def optimize_trajectory(nt,t_final,x_final):
     m.Minimize(final*(x-x_final)**2)
     m.Minimize(final*(alpha+gamma-90*deg2rad)**2)    
     m.Equation(m.abs(v*m.sin(gamma))*final<=3)
-    # m.Equation(m.abs(v*m.cos(gamma))*final<=0)  #Final Horizontal Velocity less than 0 m/s
+    if alternative_traj==1:
+        m.Equation(m.abs(v*m.cos(gamma))*final<=0)  #Final Horizontal Velocity less than 0 m/s -> Alternative Trajectory
     m.Equation(y*final<=0)
     m.Obj(-mass*final) # Objective function
 
@@ -101,13 +109,22 @@ def optimize_trajectory(nt,t_final,x_final):
     
     m.solve(disp=False,debug=False) # solve with IPOPT
         
-    print("Max of M_Rw/J_z is {} for nt={}".format(max([abs(i) for i in M_rw_J.value]),nt))
+    print("Max of M_Rw/J_z is {} for nt={}".format(max([i for i in M_rw_J.value]),nt))
         
     #Get the node of the t_bal in the time array 
-    t_bal_node=np.where(np.array(m_dot.value)==min(m_dot.value))[0][0] 
+    # t_bal_node=np.where(np.array(m_dot.value)==min(m_dot.value))[0][0] 
+    # t_bal_node = next(x for x, val in enumerate(m_dot.value) if val < 0.5)
+    if alternative_traj==0:
+        for index, value in enumerate(m_dot.value):
+                if value < m_dot_max/5:
+                    t_bal_node = index
+                    break
+    if alternative_traj==1:
+        t_bal_node = len(m.time)
+                    
     # t_bal_node=len(m.time)-1
     print(t_bal_node)
-    print(m.time[t_bal_node])
+    # print(m.time[t_bal_node])
     
     #Plot all the state variables
     
@@ -120,6 +137,7 @@ def optimize_trajectory(nt,t_final,x_final):
     plt.xlim([0, x[-1]])
     plt.ylim([0, max(y)])
     plt.title("Trajectory for Range " +"of {Range} meters".format(Range=round(x_final,1)))
+    plt.savefig("Plots"+"\\"+"Trajectory distance of {Range}.png".format(Range=round(x_final,1)))
     plt.grid(True)
 
     plt.figure(n+1) # plot results
@@ -129,7 +147,10 @@ def optimize_trajectory(nt,t_final,x_final):
     plt.legend(loc='best')
     plt.xlabel('Time(s)',fontsize=15)
     plt.ylabel('V(m/s)',fontsize=15)
+    plt.savefig("Plots"+"\\"+"Velocity Range of {Range}.png".format(Range=round(x_final,1)))
     plt.grid(True)
+
+    # n+=2
     
     plt.figure(n+2) # plot results
     plt.plot(m.time[0:t_bal_node+1],np.multiply([x for x in v.value],[np.sin(x) for x in gamma.value])[0:t_bal_node+1],'m-',label=r"Ascent Phase")
@@ -138,6 +159,7 @@ def optimize_trajectory(nt,t_final,x_final):
     plt.title("Vertical Velocity for Range " +"of {Range} meters".format(Range=round(x_final,1)))
     plt.xlabel('Time(s)',fontsize=15)
     plt.ylabel(r'$V_y$ (m/s)',fontsize=15)
+    plt.savefig("Plots"+"\\"+"Vertical Velocity Range of {Range}.png".format(Range=round(x_final,1)))
     plt.grid(True)
 
     
@@ -148,15 +170,17 @@ def optimize_trajectory(nt,t_final,x_final):
     plt.legend(loc='best')
     plt.xlabel('Time(s)',fontsize=15)
     plt.ylabel(r'$\gamma (\degree)$',fontsize=15)    
+    plt.savefig("Plots"+"\\"+"Flight Path Angle Range of {Range}.png".format(Range=round(x_final,1)))
     plt.grid(True)
     
     plt.figure(n+4)
     plt.plot(m.time[0:t_bal_node+1],[100*x/m_dot_max for x in m_dot.value][0:t_bal_node+1],'r--',label=r"Ascent Phase")
     plt.plot(m.time[t_bal_node::],[100*x/m_dot_max for x in m_dot.value][t_bal_node::],"g--",label=r"Ballistic Phase")
     plt.title("Percentage of Mass Flow rate for Range " +"of {Range} meters".format(Range=round(x_final,1)))
-    plt.legend(loc='best')
+    # plt.legend(loc='best')
     plt.xlabel('Time(s)',fontsize=15)
     plt.ylabel(r'$m_{dot}/m_{dot_{max}} (\%)$',fontsize=15)
+    plt.savefig("Plots"+"\\"+"Percentage of Mass Flow rate Range of {Range}.png".format(Range=round(x_final,1)))
     plt.grid(True)
 
     
@@ -168,6 +192,7 @@ def optimize_trajectory(nt,t_final,x_final):
     plt.legend(loc='best')
     plt.xlabel('Time(s)',fontsize=15)
     plt.ylabel('m (kg)',fontsize=15)
+    plt.savefig("Plots"+"\\"+"Mass for Range of {Range}.png".format(Range=round(x_final,1)))
     plt.grid(True)
 
     
@@ -178,6 +203,7 @@ def optimize_trajectory(nt,t_final,x_final):
     plt.legend(loc='best')
     plt.xlabel('Time(s)',fontsize=15)
     plt.ylabel(r'$\alpha (\degree)$ ',fontsize=15)
+    plt.savefig("Plots"+"\\"+"Angle of attack Range of {Range}.png".format(Range=round(x_final,1)))
     plt.grid(True)
 
     
@@ -186,20 +212,22 @@ def optimize_trajectory(nt,t_final,x_final):
     plt.plot(m.time[0:t_bal_node+1],[x * 180/np.pi for x in theta.value][0:t_bal_node+1],'b-',label=r"Ascent Phase")
     plt.plot(m.time[t_bal_node::],[x * 180/np.pi for x in theta.value][t_bal_node::],color="orange",label=r"Ballistic Phase")
     plt.title("Pitch Angle for Range " +"of {Range} meters".format(Range=round(x_final,1)))
-    plt.legend(loc='best')
+    # plt.legend(loc='best')
     plt.xlabel('Time(s)',fontsize=15)
     plt.ylabel(r'$\theta (\degree)$',fontsize=15)
+    plt.savefig("Plots"+"\\"+"Pitch Angle Range of {Range}.png".format(Range=round(x_final,1)))
     plt.grid(True)
 
     
     plt.figure(n+8)
     # plt.plot(m.time,[x /Jz for x in M_rw.value],'r--',label=r'$M_{rw}$ / $J_Z$')
-    plt.plot(m.time[0:t_bal_node+1],[x  for x in M_rw_J.value][0:t_bal_node+1],'r--',label=r"Ascent Phase")
-    plt.plot(m.time[t_bal_node::],[x  for x in M_rw_J.value][t_bal_node::],"g--",label=r"Ballistic Phase")
+    plt.plot(m.time[0:t_bal_node+1],[x for x in M_rw_J.value][0:t_bal_node+1],'r--',label=r"Ascent Phase")
+    plt.plot(m.time[t_bal_node::],[x for x in M_rw_J.value][t_bal_node::],"g--",label=r"Ballistic Phase")
     plt.title("Moment from reaction wheels as a fraction of $J_Z$ for Range " +"of {Range} meters".format(Range=round(x_final,1)))
-    plt.legend(loc='best')
+    # plt.legend(loc='best')
     plt.xlabel('Time(s)',fontsize=15)
     plt.ylabel(r'$M_{rw}/J_Z$',fontsize=15)
+    plt.savefig("Plots"+"\\"+"Moment from reaction wheels Range of {Range}.png".format(Range=round(x_final,1)))
     plt.grid(True)
 
     
@@ -211,38 +239,44 @@ def optimize_trajectory(nt,t_final,x_final):
     plt.legend(loc='best')
     plt.xlabel('Time(s)',fontsize=15)
     plt.ylabel(r'$V_{x} (m/s)$',fontsize=15)
+    plt.savefig("Plots"+"\\"+"Horizontal Velocity Range of {Range}.png".format(Range=round(x_final,1)))
     plt.grid(True)
 
-    print(mass.value[-1])
+    #print(mass.value[-1])
     n+=10
     # print(M_rw.VALUE)
+    
+
+    if save_results==1:
+        data={
+        "t":m.time,
+        "x":x.value,
+        "y":y.value,
+        "theta":np.add([x for x in alpha.value],[x for x in gamma.value]) ,
+        "mass":mass.value,
+        "M_rw_J":M_rw_J.value,
+        "m_dot":m_dot.value
+        }
+        destination_folder="Plots"
+        df=pd.DataFrame(data)   
+        twr_inputs=[Isp*i*g0/(m_total*gm) for i in m_dot.value]
+        sio.savemat("Range_{}.mat".format(x_final), {"Time":m.time,"Velocity":v.value,"Pitch":theta.value,"X":x.value,"Y":y.value,"Gamma":gamma.value,"twr":twr_inputs,"Mrw":M_rw_J.value})
+        df.to_csv(os.path.join(destination_folder,'Data for Range of {}.csv'.format(round(x_final,1))), index=False)         
+
     
 def main():	
     step=0.1 #Guess for the step
     t_final=Initial_Guess.Initial_guess_Hop(x_final,twr)[2]
-    # t_final=5.5
+    if alternative_traj==1:
+        t_final=5.5 #Uncomment this line if the constraint of final horizontal velocity of 0m/s is added
     print(t_final)
-    interval=10
-    nt_values= np.linspace(int(t_final/step)-interval,int(t_final/step)+interval,interval*2+1) #Try for a range of nt to see which works
-    # nt_values=[40,41,42,43,44,45,46,47,48,49,50] #Insert here the values of nt that work 
-    nt_values=[45] #Insert here the values of nt that work 
+    interval=5
+    global nt_values
+    if nt_values==[]:
+        nt_values= np.linspace(int(t_final/step)-interval,int(t_final/step)+interval,interval*2+1) #Try for a range of nt to see which works
     print(nt_values)
     for i in nt_values:
         optimize_trajectory(int(i),t_final,x_final)
 
 if __name__ == "__main__":
     main()
-
-#Do not forget to change the condition of the horizontal velocity
-
-##Nt_values for different ranges, for a max final horizontal speed of 1 m/s
-#4 -> 36
-#3.2 -> 59
-#2.501 -> 33,49
-#2 -> 32
-#1.499 -> 28
-#1 -> 61
-
-##Nt_values for different ranges, for a max final horizontal speed of 0 m/s
-#3.2 -> 51,53 (t=5.5)
-#3.199 -> 54 (Best one, t=5.5) 
